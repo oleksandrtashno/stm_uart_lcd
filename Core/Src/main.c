@@ -23,6 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "stdbool.h"
+#include "usbh_hid.h"
 
 /* USER CODE END Includes */
 
@@ -44,10 +46,12 @@
 
 SPI_HandleTypeDef hspi5;
 
-UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
+
+extern HID_KEYBD_Info_TypeDef keybd_info;
 
 /* USER CODE END PV */
 
@@ -55,8 +59,8 @@ UART_HandleTypeDef huart3;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI5_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_USART6_UART_Init(void);
 void MX_USB_HOST_Process(void);
 
 /* USER CODE BEGIN PFP */
@@ -97,10 +101,14 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_SPI5_Init();
-  MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   MX_USB_HOST_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+	HAL_GPIO_WritePin(LED_status_GPIO_Port, LED_status_Pin, GPIO_PIN_RESET);
+	char ttybuf[1024];
+	int index = 0;
+	bool ignore = false;
 
   /* USER CODE END 2 */
 
@@ -108,6 +116,40 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+		//echo
+		if(__HAL_UART_GET_FLAG(&huart6, UART_FLAG_RXNE)) {
+			while(!__HAL_UART_GET_FLAG(&huart3, UART_FLAG_TXE));
+			char input = huart6.Instance->RDR;
+			
+			if(index < 1023) {
+				ttybuf[index++] = input;
+			}
+			
+			if(input == 0x1b) {
+				ignore = true;
+			}
+			
+			if(!ignore) {
+				if(input >= 0x20 && input <= 0x7f){
+					huart3.Instance->TDR = input;
+				}
+				else if(input == 0x9 || input == 0x9 || input == '\r' || input == '\n' || input == 0x8 ) {
+					huart3.Instance->TDR = input;
+				}
+			}
+			else
+			{
+				if(input >= 0x30 && input <= 0x7f){
+					ignore = false;
+				}
+			}
+			
+		}
+		
+		if(__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE)) {
+			while(!__HAL_UART_GET_FLAG(&huart6, UART_FLAG_TXE));
+			huart6.Instance->TDR = huart3.Instance->RDR;
+		}		
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
 
@@ -115,7 +157,8 @@ int main(void)
   }
   /* USER CODE END 3 */
 }
-
+// 20 1b 37 0d 0d 0a
+// 'space' 'escape' '7' '\r' '\r' '\n'
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -164,10 +207,10 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART1|RCC_PERIPHCLK_USART3
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART3|RCC_PERIPHCLK_USART6
                               |RCC_PERIPHCLK_CLK48;
-  PeriphClkInitStruct.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
   PeriphClkInitStruct.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
+  PeriphClkInitStruct.Usart6ClockSelection = RCC_USART6CLKSOURCE_PCLK2;
   PeriphClkInitStruct.Clk48ClockSelection = RCC_CLK48SOURCE_PLL;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
@@ -216,41 +259,6 @@ static void MX_SPI5_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -282,6 +290,41 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 115200;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart6.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart6.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
 
 }
 
@@ -336,6 +379,21 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void USBH_HID_EventCallback(USBH_HandleTypeDef *phost)
+{
+	HAL_GPIO_WritePin(LED_status_GPIO_Port, LED_status_Pin, GPIO_PIN_SET);
+	
+  HID_HandleTypeDef *HID_handle = (HID_HandleTypeDef*) phost->pActiveClass->pData;
+	
+	if(HID_handle->Init == USBH_HID_KeybdInit) {
+		USBH_HID_GetKeybdInfo(phost);
+		
+		printf("Pressed key: %d\n", keybd_info.keys[0]);
+		
+	}
+		
+}
 
 /* USER CODE END 4 */
 
